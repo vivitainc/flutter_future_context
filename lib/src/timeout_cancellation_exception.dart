@@ -1,4 +1,4 @@
-import 'cancellation_exception.dart';
+import 'package:async_notify/async_notify.dart';
 
 /// 非同期処理のタイムアウト時に投げられる.
 class TimeoutCancellationException extends CancellationException {

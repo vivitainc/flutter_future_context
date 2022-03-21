@@ -1,29 +1,27 @@
-async_plus
+future_context
 
 ## Features
 
-Flutterアプリの非同期処理をサポートする.
+Flutterアプリの非同期処理キャンセル処理をサポートする.
 
 * FutureContext
     Kotlin.coroutinesのようなキャンセル可能な非同期処理
-* Notify / NotifyChannel
-    Message(Object)の非同期待ち合わせ.
-
-## Getting started
-
-TODO.
-
-```yaml
-# pubspec.yaml
-```
 
 ## Usage
 
 TODO.
 
 ```dart
+final context = FutureContext();
+
+// if you should cancel this `suspend` block.
+// context.cancel();
+
+final value = await context.suspend((context) async {
+    // Very slow.
+    return 100;
+});
+
+// finalyze
+context.dispose();
 ```
-
-## Additional information
-
-[Download Fonts](https://github.com/vivitainc/VIVITAFont)

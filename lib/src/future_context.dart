@@ -1,11 +1,9 @@
 import 'dart:async';
 
+import 'package:async_notify/async_notify.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:tuple/tuple.dart';
 
-import 'cancellation_exception.dart';
-import 'notify.dart';
-import 'notify_channel.dart';
 import 'timeout_cancellation_exception.dart';
 
 /// 非同期処理のキャンセル不可能な1ブロック処理
@@ -71,8 +69,8 @@ class FutureContext {
     _resume();
   }
 
-  void dispose() {
-    _notify.dispose();
+  Future dispose() async {
+    await _notify.dispose();
     cancel('FutureContext.dispose()');
   }
 
@@ -146,7 +144,7 @@ class FutureContext {
       }());
       return await child.suspend(block);
     } finally {
-      child.dispose();
+      await child.dispose();
     }
   }
 
@@ -194,9 +192,10 @@ class FutureContext {
     assert(_error == null, 'FutureContext invalid state');
     _error = e;
     // 1サイクル遅れてDisposeを実行する.
-    () async {
-      dispose();
-    }();
+    unawaited(() async {
+      await Future<void>.delayed(Duration.zero);
+      await dispose();
+    }());
   }
 
   // /// 子Jobを作成する.
