@@ -47,10 +47,20 @@ class FutureContext {
   FutureContext._launch({FutureContext? parent}) : _parent = parent;
 
   /// 処理が継続中の場合trueを返却する.
-  bool get isActive => !_done && _error == null && !_notify.isClosed;
+  bool get isActive {
+    if (_parent != null && !_parent!.isActive) {
+      return false;
+    }
+    return !_done && _error == null && !_notify.isClosed;
+  }
 
   /// 処理がキャンセル済みの場合true.
-  bool get isCanceled => _error is CancellationException;
+  bool get isCanceled {
+    if (_parent != null && _parent!.isCanceled) {
+      return true;
+    }
+    return _error is CancellationException;
+  }
 
   /// Futureをキャンセルする.
   /// すでにキャンセル済みの場合は何もしない.
