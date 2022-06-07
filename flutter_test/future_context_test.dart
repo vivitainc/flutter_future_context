@@ -22,6 +22,44 @@ void main() {
     expect(value, 100);
   });
 
+  test('timeout(success)', () async {
+    final result = await context.withTimeout<int>(
+      const Duration(seconds: 10),
+      (context) async {
+        await context.delayed(const Duration(seconds: 1));
+        return 1;
+      },
+    );
+    expect(result, 1);
+  });
+
+  test('timeout', () async {
+    try {
+      await context.withTimeout<void>(
+        const Duration(seconds: 1),
+        (context) async {
+          await context.delayed(const Duration(seconds: 10));
+        },
+      );
+      fail('not calling');
+    } on TimeoutCancellationException catch (e) {
+      // OK!
+    }
+  });
+  test('timeout(Blocking)', () async {
+    try {
+      await context.withTimeout<void>(
+        const Duration(seconds: 1),
+        (context) async {
+          await Future<void>.delayed(const Duration(seconds: 10));
+        },
+      );
+      fail('not calling');
+    } on TimeoutCancellationException catch (e) {
+      debugPrint('$e');
+    }
+  });
+
   test('cancel', () async {
     unawaited(() async {
       await Future<void>.delayed(const Duration(milliseconds: 100));

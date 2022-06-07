@@ -133,28 +133,16 @@ class FutureContext {
   Future<T2> withTimeout<T2>(
       Duration timeout, FutureSuspendBlock<T2> block) async {
     final child = FutureContext._launch(parent: this);
+    final task = child.suspend(block).timeout(timeout);
     try {
-      unawaited(() async {
-        try {
-          await child.suspend((context) async {
-            await context.delayed(timeout);
-            if (child.isActive) {
-              // 指定時間経ってもタスクが終わっていないので、タイムアウト扱いにする.
-              child._cancel(
-                TimeoutCancellationException(
-                  'withContext<$T2>.timeout',
-                  timeout,
-                ),
-              );
-            }
-          });
-        } on CancellationException catch (_) {
-          // ChildContextのキャンセル処理はdropする.
-        }
-      }());
-      return await child.suspend(block);
+      return await task;
+    } on TimeoutException catch (e) {
+      throw TimeoutCancellationException(
+        e.message ?? 'withTimeout<$T2>',
+        timeout,
+      );
     } finally {
-      await child.dispose();
+      unawaited(child.dispose());
     }
   }
 
