@@ -42,7 +42,7 @@ void main() {
         },
       );
       fail('not calling');
-    } on TimeoutCancellationException catch (e) {
+    } on TimeoutCancellationException catch (_) {
       // OK!
     }
   });
