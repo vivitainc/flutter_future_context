@@ -9,7 +9,7 @@ jobs:
     env:
       TZ: Asia/Tokyo
     steps:
-      - uses: actions/checkout@v2.0.0
+      - uses: actions/checkout@v3
       - name: "install / flutter / configure"
         uses: kuhnroyal/flutter-fvm-config-action@v1
       - name: "install / flutter"
