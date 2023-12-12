@@ -37,11 +37,11 @@ class FutureContext {
   /// 現在の状態
   var _state = _ContextState.active;
 
-  factory FutureContext() => FutureContext._launch(
-        parent: null,
-      );
+  /// 空のFutureContextを作成する.
+  FutureContext() : _parent = null;
 
-  FutureContext._launch({FutureContext? parent}) : _parent = parent;
+  /// 指定した親Contextを持つFutureContextを作成する.
+  FutureContext.child({required FutureContext parent}) : _parent = parent;
 
   /// 処理が継続中の場合trueを返却する.
   bool get isActive {
@@ -121,7 +121,7 @@ class FutureContext {
     Duration timeout,
     FutureSuspendBlock<T2> block,
   ) async {
-    final child = FutureContext._launch(parent: this);
+    final child = FutureContext.child(parent: this);
     try {
       return await child.suspend(block).timeout(timeout);
     } on TimeoutException catch (e) {
