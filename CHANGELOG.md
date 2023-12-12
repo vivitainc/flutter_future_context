@@ -1,3 +1,8 @@
+## 0.0.2+1
+
+* Chg: FutureContext.group()を追加
+* Chg: FutureContext.suspend()をinternalに変更し、 withContext(), withTimeout()のトップレベル関数を追加
+
 ## 0.0.2
 
 * Chg: FutureContext実装を整理
