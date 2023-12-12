@@ -1,3 +1,7 @@
+## 0.0.2+2
+
+* Fix: 軽微な問題を修正
+
 ## 0.0.2+1
 
 * Chg: FutureContext.group()を追加
