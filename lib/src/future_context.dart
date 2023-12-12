@@ -56,18 +56,10 @@ class FutureContext {
   FutureContext() : _group = const {};
 
   /// 指定した親Contextを持つFutureContextを作成する.
-  FutureContext.child({required FutureContext parent}) : _group = {parent} {
-    _assertRecursive(this, this);
-  }
+  FutureContext.child(FutureContext parent) : _group = {parent};
 
-  static void _assertRecursive(FutureContext self, FutureContext c) {
-    for (final c in c._group) {
-      if (c == self) {
-        throw Exception('Recursive FutureContext.');
-      }
-      _assertRecursive(self, c);
-    }
-  }
+  /// 指定した複数の親Contextを持つFutureContextを作成する.
+  FutureContext.group(Iterable<FutureContext> group) : _group = group.toSet();
 
   /// 処理が継続中の場合trueを返却する.
   bool get isActive {
