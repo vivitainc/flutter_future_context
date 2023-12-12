@@ -11,7 +11,7 @@ void main() {
     context = FutureContext();
   });
   tearDown(() async {
-    await context.dispose();
+    await context.close();
   });
 
   test('suspend', () async {
@@ -20,7 +20,7 @@ void main() {
       return 100;
     });
     expect(value, 100);
-  });
+  }, timeout: const Timeout(Duration(seconds: 2)));
 
   test('timeout(success)', () async {
     final result = await context.withTimeout<int>(
@@ -63,7 +63,7 @@ void main() {
   test('cancel', () async {
     unawaited(() async {
       await Future<void>.delayed(const Duration(milliseconds: 100));
-      context.cancel('FutureContext.cancel()');
+      await context.close();
     }());
     try {
       final value = await context.suspend((context) async {
