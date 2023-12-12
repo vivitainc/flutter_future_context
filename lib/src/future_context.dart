@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:async_notify/async_notify.dart';
 import 'package:rxdart/rxdart.dart';
-import 'package:tuple/tuple.dart';
 
 import 'timeout_cancellation_exception.dart';
 
@@ -97,26 +96,28 @@ class FutureContext {
   /// 処理の速やかな中断のサポートを受けることができる.
   Future<T2> suspend<T2>(FutureSuspendBlock<T2> block) async {
     _resume();
-    final channel = NotifyChannel<Tuple2<T2?, Exception?>>(_notify);
+    final channel = NotifyChannel<(T2?, Exception?)>(_notify);
     unawaited(() async {
       try {
         final value = await block(this);
         if (!channel.isClosed) {
-          channel.send(Tuple2(value, null));
+          channel.send((value, null));
         }
       } on Exception catch (e) {
         if (!channel.isClosed) {
-          channel.send(Tuple2(null, e));
+          channel.send((null, e));
         }
       }
     }());
     try {
       final pair = await channel.receive();
-      if (pair.item2 != null) {
-        throw pair.item2!;
+      final item = pair.$1;
+      final exception = pair.$2;
+      if (exception != null) {
+        throw exception;
       }
       _resume();
-      return pair.item1 as T2;
+      return item as T2;
     } on Exception catch (_) {
       if (_error != null) {
         throw _error!;
