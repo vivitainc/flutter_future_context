@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:async_notify/async_notify.dart';
-import 'package:rxdart/rxdart.dart';
+import 'package:meta/meta.dart';
 
 import 'timeout_cancellation_exception.dart';
 
@@ -28,7 +28,8 @@ typedef FutureSuspendBlock<T> = Future<T> Function(FutureContext context);
 /// 使用箇所については慎重に検討が必要.
 class FutureContext {
   /// 親も含めた管理を簡易化するために、グローバルで１つのNotifyを使用する.
-  static final _systemNotify = Notify();
+  @internal
+  static final systemNotify = Notify();
 
   /// 親Context.
   final FutureContext? _parent;
@@ -70,7 +71,7 @@ class FutureContext {
   /// e.g.
   /// context.delayed(Duration(seconds: 1));
   Future delayed(final Duration duration) async =>
-      suspend((context) => _systemNotify.delay(duration));
+      suspend((context) => systemNotify.delay(duration));
 
   /// 非同期処理の特定1ブロックを実行する.
   /// これはFutureContext<T>の実行最小単位として機能する.
@@ -83,7 +84,7 @@ class FutureContext {
   /// suspend()関数は1コールのオーバーヘッドが大きいため、
   /// 内部でキャンセル処理が必要なほど長い場合に利用する.
   Future<T2> suspend<T2>(FutureSuspendBlock<T2> block) async {
-    _systemNotify.notify();
+    systemNotify.notify();
     _resume();
     (T2?, Exception?)? result;
     unawaited(() async {
@@ -92,13 +93,13 @@ class FutureContext {
       } on Exception catch (e) {
         result = (null, e);
       } finally {
-        _systemNotify.notify();
+        systemNotify.notify();
       }
     }());
 
     // タスクが完了するまで待つ
     while (result == null) {
-      await _systemNotify.wait();
+      await systemNotify.wait();
       _resume();
     }
 
@@ -131,69 +132,6 @@ class FutureContext {
     } finally {
       unawaited(child.close());
     }
-  }
-
-  /// [Stream] の有効期限をこのインスタンスに合わせる.
-  /// Listen側が終了するか、このFutureContextが閉じられると転送を終了する.
-  Stream<T2> wrapStream<T2>(Stream<T2> stream) async* {
-    final channel = NotifyChannel<(T2?, bool, Exception?)>(_systemNotify);
-    final subscription = stream
-        .map((event) => (event, false, null))
-        .doOnError(
-            (e, stackTrace) => channel.send((null, true, e as Exception)))
-        .doOnDone(() => channel.send((null, true, null)))
-        .listen((event) => channel.send(event));
-
-    try {
-      while (true) {
-        final next = await suspend((context) => channel.receive());
-        final item = next.$1;
-        final done = next.$2;
-        final exception = next.$3;
-        if (exception != null) {
-          throw exception;
-        } else if (done) {
-          return;
-        } else {
-          yield item as T2;
-        }
-      }
-    } finally {
-      await subscription.cancel();
-    }
-
-    // final subject = PublishSubject<T2>();
-
-    // // 入れ違いを防ぐため、最初にStreamを作る
-    // final result = () async* {
-    //   await for (final v in subject.stream) {
-    //     yield v;
-    //   }
-    // }();
-
-    // // stream -> channel -> subjectでデータを流す
-    // // FutureContextの寿命よりも早くStreamが終了した場合、Subjectを閉じて強制終了させる.
-    // final channel = makeChannel<T2>();
-    // final subscription = stream.listen((event) => channel.send(event));
-    // subscription.onDone(() => subject.close());
-
-    // unawaited(() async {
-    //   try {
-    //     while (isActive) {
-    //       try {
-    //         subject.add(await channel.receive());
-    //       } on CancellationException catch (_) {
-    //         return;
-    //       }
-    //     }
-    //   } finally {
-    //     if (!subject.isClosed) {
-    //       unawaited(subject.close());
-    //     }
-    //     unawaited(subscription.cancel());
-    //   }
-    // }());
-    // return result;
   }
 
   Future _closeWith({
