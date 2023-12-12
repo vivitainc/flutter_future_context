@@ -22,6 +22,16 @@ void main() {
     expect(value, 100);
   }, timeout: const Timeout(Duration(seconds: 2)));
 
+  test('delayed', () async {
+    final sw = Stopwatch();
+    sw.start();
+    await context.delayed(const Duration(milliseconds: 110));
+    sw.stop();
+    debugPrint('elapsedMilliseconds: ${sw.elapsedMilliseconds} ms');
+    expect(sw.elapsedMilliseconds, greaterThanOrEqualTo(110));
+    expect(sw.elapsedMilliseconds, lessThan(120));
+  });
+
   test('timeout(success)', () async {
     final result = await context.withTimeout<int>(
       const Duration(seconds: 10),
@@ -76,5 +86,23 @@ void main() {
       debugPrint('$e, $stackTrace');
       // OK!
     }
+  });
+
+  test('group', () async {
+    final ctx2 = FutureContext();
+    final groupContext = FutureContext.group({context, ctx2});
+
+    expect(ctx2.isActive, isTrue);
+    expect(groupContext.isActive, isTrue);
+    expect(ctx2.isCanceled, isFalse);
+    expect(groupContext.isCanceled, isFalse);
+
+    // 親をキャンセル
+    await ctx2.close();
+
+    expect(ctx2.isActive, isFalse);
+    expect(groupContext.isActive, isFalse);
+    expect(ctx2.isCanceled, isTrue);
+    expect(groupContext.isCanceled, isTrue);
   });
 }

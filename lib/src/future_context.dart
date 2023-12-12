@@ -3,22 +3,7 @@ import 'dart:async';
 import 'package:async_notify/async_notify.dart';
 import 'package:meta/meta.dart';
 
-import '../future_context.dart';
 import 'timeout_cancellation_exception.dart';
-
-/// 指定した [context] を使用してsuspend関数を実行する.
-/// contextがnullである場合、空のFutureContextが生成される.
-/// 生成された場合は自動的に [FutureContext.close] がコールされる.
-Future<T> suspend<T>(FutureContext? context, FutureSuspendBlock<T> block) {
-  final c = context ?? FutureContext();
-  try {
-    return c.suspend(block);
-  } finally {
-    if (context == null) {
-      c.close();
-    }
-  }
-}
 
 /// 非同期処理のキャンセル不可能な1ブロック処理
 /// このブロック完了後、FutureContextは復帰チェックを行い、必要であればキャンセル等を行う.
@@ -92,8 +77,25 @@ class FutureContext {
   ///
   /// e.g.
   /// context.delayed(Duration(seconds: 1));
-  Future delayed(final Duration duration) async =>
-      suspend((context) => systemNotify.delay(duration));
+  ///
+  /// NOTE.
+  /// 内部実装では [duration] が複数回に分割されて実行されることで、
+  /// 細かくキャンセル処理を行う.
+  Future delayed(final Duration duration) async => suspend((context) async {
+        final endAt = DateTime.now().add(duration);
+        const split = Duration(milliseconds: 100);
+        while (context.isActive) {
+          final duration = endAt.difference(DateTime.now());
+          if (duration < split) {
+            if (!duration.isNegative) {
+              await Future<void>.delayed(duration);
+            }
+            return;
+          } else {
+            await Future<void>.delayed(split);
+          }
+        }
+      });
 
   /// 非同期処理の特定1ブロックを実行する.
   /// これはFutureContext<T>の実行最小単位として機能する.
@@ -105,6 +107,7 @@ class FutureContext {
   ///
   /// suspend()関数は1コールのオーバーヘッドが大きいため、
   /// 内部でキャンセル処理が必要なほど長い場合に利用する.
+  @internal
   Future<T2> suspend<T2>(FutureSuspendBlock<T2> block) async {
     systemNotify.notify();
     _resume();
@@ -139,11 +142,12 @@ class FutureContext {
   ///
   /// タイムアウトが発生した場合、
   /// block()は [TimeoutCancellationException] が発生して終了する.
+  @internal
   Future<T2> withTimeout<T2>(
     Duration timeout,
     FutureSuspendBlock<T2> block,
   ) async {
-    final child = FutureContext.child(parent: this);
+    final child = FutureContext.child(this);
     try {
       return await child.suspend(block).timeout(timeout);
     } on TimeoutException catch (e) {
