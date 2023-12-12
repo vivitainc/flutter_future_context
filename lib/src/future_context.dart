@@ -3,7 +3,22 @@ import 'dart:async';
 import 'package:async_notify/async_notify.dart';
 import 'package:meta/meta.dart';
 
+import '../future_context.dart';
 import 'timeout_cancellation_exception.dart';
+
+/// 指定した [context] を使用してsuspend関数を実行する.
+/// contextがnullである場合、空のFutureContextが生成される.
+/// 生成された場合は自動的に [FutureContext.close] がコールされる.
+Future<T> suspend<T>(FutureContext? context, FutureSuspendBlock<T> block) {
+  final c = context ?? FutureContext();
+  try {
+    return c.suspend(block);
+  } finally {
+    if (context == null) {
+      c.close();
+    }
+  }
+}
 
 /// 非同期処理のキャンセル不可能な1ブロック処理
 /// このブロック完了後、FutureContextは復帰チェックを行い、必要であればキャンセル等を行う.
@@ -32,31 +47,46 @@ class FutureContext {
   static final systemNotify = Notify();
 
   /// 親Context.
-  final FutureContext? _parent;
+  final Set<FutureContext> _group;
 
   /// 現在の状態
   var _state = _ContextState.active;
 
   /// 空のFutureContextを作成する.
-  FutureContext() : _parent = null;
+  FutureContext() : _group = const {};
 
   /// 指定した親Contextを持つFutureContextを作成する.
-  FutureContext.child({required FutureContext parent}) : _parent = parent;
+  FutureContext.child({required FutureContext parent}) : _group = {parent} {
+    _assertRecursive(this, this);
+  }
+
+  static void _assertRecursive(FutureContext self, FutureContext c) {
+    for (final c in c._group) {
+      if (c == self) {
+        throw Exception('Recursive FutureContext.');
+      }
+      _assertRecursive(self, c);
+    }
+  }
 
   /// 処理が継続中の場合trueを返却する.
   bool get isActive {
-    // 親がアクティブでないなら、このContextもアクティブではない.
-    if (_parent?.isActive == false) {
-      return false;
+    // 一つでも非アクティブなものがあれば、このContextも非アクティブ.
+    for (final c in _group) {
+      if (!c.isActive) {
+        return false;
+      }
     }
     return _state == _ContextState.active;
   }
 
   /// 処理がキャンセル済みの場合true.
   bool get isCanceled {
-    if (_parent?.isCanceled == true) {
-      // 親がキャンセル状態なら、すでにキャンセル状態である
-      return true;
+    // 一つでもキャンセルされていたら、このContextもキャンセルされている.
+    for (final c in _group) {
+      if (c.isCanceled) {
+        return true;
+      }
     }
     return _state == _ContextState.canceled;
   }
@@ -146,7 +176,9 @@ class FutureContext {
 
   /// 非同期処理の状態をチェックし、必要であれはキャンセル処理を発生させる.
   void _resume() {
-    _parent?._resume(); // 親のResumeチェック
+    for (final c in _group) {
+      c._resume();
+    }
 
     // 自分自身のResume Check.
     if (_state == _ContextState.canceled) {
