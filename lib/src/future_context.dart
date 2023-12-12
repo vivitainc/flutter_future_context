@@ -141,6 +141,7 @@ class FutureContext {
       return;
     }
     _state = next;
+    systemNotify.notify();
   }
 
   /// 非同期処理の状態をチェックし、必要であれはキャンセル処理を発生させる.
