@@ -13,13 +13,16 @@ import 'timeout_cancellation_exception.dart';
 ///
 /// suspend()関数は1コールのオーバーヘッドが大きいため、
 /// 内部でキャンセル処理が必要なほど長い場合に利用する.
-Future<T> withContext<T>(FutureContext? context, FutureSuspendBlock<T> block) {
+Future<T> withContext<T>(
+  FutureContext? context,
+  FutureSuspendBlock<T> block,
+) async {
   final c = context ?? FutureContext();
   try {
-    return c.suspend(block);
+    return await c.suspend(block);
   } finally {
     if (context == null) {
-      c.close();
+      await c.close();
     }
   }
 }
@@ -37,13 +40,13 @@ Future<T> withTimeout<T>(
   FutureContext? context,
   Duration timeout,
   FutureSuspendBlock<T> block,
-) {
+) async {
   final c = context ?? FutureContext();
   try {
-    return c.withTimeout(timeout, block);
+    return await c.withTimeout(timeout, block);
   } finally {
     if (context == null) {
-      c.close();
+      await c.close();
     }
   }
 }
