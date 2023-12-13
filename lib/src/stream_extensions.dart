@@ -12,7 +12,7 @@ extension StreamWithContext<T> on Stream<T> {
     final channel =
         NotifyChannel<(T?, bool, Exception?)>(FutureContext.systemNotify);
     final subscription = map((event) => (event, false, null))
-        .doOnError(
+        .handleError(
             (e, stackTrace) => channel.send((null, true, e as Exception)))
         .doOnDone(() => channel.send((null, true, null)))
         .listen((event) => channel.send(event));
