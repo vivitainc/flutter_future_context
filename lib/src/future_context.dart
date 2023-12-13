@@ -189,21 +189,16 @@ class FutureContext {
 
   /// 非同期処理の状態をチェックし、必要であれはキャンセル処理を発生させる.
   void _resume() {
-    for (final c in _group) {
-      c._resume();
-    }
-
     // 自分自身のResume Check.
     if (_state == _ContextState.canceled) {
       throw CancellationException('FutureContext is canceled.');
     }
-  }
-
-  Future _wait() async {
-    if (isActive) {
-      return _systemSubject.where((event) => event == this).first;
+    for (final c in _group) {
+      c._resume();
     }
   }
+
+  Future _wait() async => _systemSubject.first;
 }
 
 enum _ContextState {

@@ -1,3 +1,7 @@
+## 0.0.2+5
+
+* Add: FutureContextのキャンセル状況をStreamで取得するpropertyを追加
+
 ## 0.0.2+4
 
 * Fix: Stream.withContext()で正常に例外が伝搬しない問題を修正

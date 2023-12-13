@@ -21,6 +21,12 @@ void main() {
     debugPrint('context close');
     await context.close();
     await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    // キャンセル済みなので、これは常にtrueである
+    expect(
+      await context.isCanceledStream.where((event) => event).first,
+      isTrue,
+    );
     debugPrint('tearDown');
   });
 
