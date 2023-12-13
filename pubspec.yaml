@@ -2,7 +2,7 @@ name: future_context
 description: |
   Cancelable future support.
   'future_context' library is Experimental.
-version: 0.0.2+5
+version: 0.0.2+6
 homepage: https://github.com/vivitainc/flutter_future_context
 
 environment:
