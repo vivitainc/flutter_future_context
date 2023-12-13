@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:async_notify/async_notify.dart';
 import 'package:meta/meta.dart';
+import 'package:rxdart/rxdart.dart';
 
 import 'timeout_cancellation_exception.dart';
 
@@ -27,9 +28,7 @@ typedef FutureSuspendBlock<T> = Future<T> Function(FutureContext context);
 /// 処理が冗長になることと、Dart標準からかけ離れていくリスクがあるため、
 /// 使用箇所については慎重に検討が必要.
 class FutureContext {
-  /// 親も含めた管理を簡易化するために、グローバルで１つのNotifyを使用する.
-  @internal
-  static final systemNotify = Notify();
+  static final _systemSubject = PublishSubject<FutureContext>();
 
   /// 親Context.
   final Set<FutureContext> _group;
@@ -59,13 +58,27 @@ class FutureContext {
 
   /// 処理がキャンセル済みの場合true.
   bool get isCanceled {
+    // 軽量処理を選考して呼び出す
+    if (_state == _ContextState.canceled) {
+      return true;
+    }
+
     // 一つでもキャンセルされていたら、このContextもキャンセルされている.
     for (final c in _group) {
       if (c.isCanceled) {
         return true;
       }
     }
-    return _state == _ContextState.canceled;
+    return false;
+  }
+
+  /// キャンセル状態をハンドリングするStreamを返却する.
+  Stream<bool> get isCanceledStream {
+    if (isCanceled) {
+      return Stream.value(true);
+    } else {
+      return _systemSubject.map((event) => isCanceled).distinct();
+    }
   }
 
   /// Futureをキャンセルする.
@@ -83,7 +96,7 @@ class FutureContext {
   /// 細かくキャンセル処理を行う.
   Future delayed(final Duration duration) async => suspend((context) async {
         final endAt = DateTime.now().add(duration);
-        const split = Duration(milliseconds: 100);
+        const split = Duration(milliseconds: 256);
         while (context.isActive) {
           final duration = endAt.difference(DateTime.now());
           if (duration < split) {
@@ -93,6 +106,7 @@ class FutureContext {
             return;
           } else {
             await Future<void>.delayed(split);
+            _notify();
           }
         }
       });
@@ -109,7 +123,7 @@ class FutureContext {
   /// 内部でキャンセル処理が必要なほど長い場合に利用する.
   @internal
   Future<T2> suspend<T2>(FutureSuspendBlock<T2> block) async {
-    systemNotify.notify();
+    _notify();
     _resume();
     (T2?, Exception?)? result;
     unawaited(() async {
@@ -118,13 +132,13 @@ class FutureContext {
       } on Exception catch (e) {
         result = (null, e);
       } finally {
-        systemNotify.notify();
+        _notify();
       }
     }());
 
     // タスクが完了するまで待つ
     while (result == null) {
-      await systemNotify.wait();
+      await _wait();
       _resume();
     }
 
@@ -163,11 +177,14 @@ class FutureContext {
   Future _closeWith({
     required _ContextState next,
   }) async {
-    if (_state != _ContextState.active) {
-      return;
+    if (_state == _ContextState.active) {
+      _state = next;
     }
-    _state = next;
-    systemNotify.notify();
+    _notify();
+  }
+
+  void _notify() {
+    _systemSubject.add(this);
   }
 
   /// 非同期処理の状態をチェックし、必要であれはキャンセル処理を発生させる.
@@ -179,6 +196,12 @@ class FutureContext {
     // 自分自身のResume Check.
     if (_state == _ContextState.canceled) {
       throw CancellationException('FutureContext is canceled.');
+    }
+  }
+
+  Future _wait() async {
+    if (isActive) {
+      return _systemSubject.where((event) => event == this).first;
     }
   }
 }

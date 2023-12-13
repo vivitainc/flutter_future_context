@@ -4,13 +4,14 @@ import 'package:rxdart/rxdart.dart';
 import 'future_context.dart';
 
 extension StreamWithContext<T> on Stream<T> {
+  static final _systemNotify = Notify();
+
   /// StreamとFutureContextを統合して新しいStreamを作成する.
   ///
   /// [context] がキャンセルされたタイミングで、このStreamもキャンセルされる.
   /// キャンセルされる場合、 [CancellationException] が投げられる点に注意すること.
   Stream<T> withContext(FutureContext context) async* {
-    final channel =
-        NotifyChannel<(T?, bool, Exception?)>(FutureContext.systemNotify);
+    final channel = NotifyChannel<(T?, bool, Exception?)>(_systemNotify);
     final subscription = map((event) => (event, false, null))
         .handleError(
             (e, stackTrace) => channel.send((null, true, e as Exception)))

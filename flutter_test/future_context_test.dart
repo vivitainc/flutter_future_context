@@ -8,10 +8,20 @@ import 'package:future_context/future_context.dart';
 void main() {
   late FutureContext context;
   setUp(() async {
+    debugPrint('setUp');
     context = FutureContext();
+
+    unawaited(() async {
+      await for (final cancel in context.isCanceledStream) {
+        debugPrint('isCanceled: $cancel');
+      }
+    }());
   });
   tearDown(() async {
+    debugPrint('context close');
     await context.close();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    debugPrint('tearDown');
   });
 
   test('suspend', () async {
