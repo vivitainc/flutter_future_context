@@ -1,3 +1,7 @@
+## 0.0.2+4
+
+* Fix: Stream.withContext()で正常に例外が伝搬しない問題を修正
+
 ## 0.0.2+3
 
 * Add: withContextGroup()トップレベル関数を追加
