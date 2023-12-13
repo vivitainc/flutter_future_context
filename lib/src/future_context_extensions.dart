@@ -27,6 +27,23 @@ Future<T> withContext<T>(
   }
 }
 
+/// 指定した [contexts] を使用してsuspend関数を実行する.
+/// 実行中に [contexts] のいずれかがキャンセルされた場合、この関数は [CancellationException] を投げて早期終了する.
+///
+/// suspend()関数は1コールのオーバーヘッドが大きいため、
+/// 内部でキャンセル処理が必要なほど長い場合に利用する.
+Future<T> withContextGroup<T>(
+  Iterable<FutureContext> contexts,
+  FutureSuspendBlock<T> block,
+) async {
+  final c = FutureContext.group(contexts);
+  try {
+    return await c.suspend(block);
+  } finally {
+    await c.close();
+  }
+}
+
 /// 指定した [context] を使用してsuspend関数を実行する.
 /// 実行中に [context] がキャンセルされた場合、この関数は [CancellationException] を投げて早期終了する.
 /// また、指定した [timeout] が経過した場合も [TimeoutCancellationException] を投げて早期終了する.
