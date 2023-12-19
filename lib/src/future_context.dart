@@ -1,8 +1,8 @@
 import 'dart:async';
 
 import 'package:async_notify/async_notify.dart';
+import 'package:meta/meta.dart';
 import 'package:rxdart/rxdart.dart';
-import 'package:tuple/tuple.dart';
 
 import 'timeout_cancellation_exception.dart';
 
@@ -13,7 +13,7 @@ typedef FutureSuspendBlock<T> = Future<T> Function(FutureContext context);
 /// 非同期（Async）状態を管理する.
 /// FutureContextの目標はキャンセル可能な非同期処理のサポートである.
 ///
-/// 処理終了後、必ず [dispose] をコールする必要がある.
+/// 処理終了後、必ず [close] をコールする必要がある.
 ///
 /// 開発者はFutureContext.suspend()に関数を渡し、実行を行う.
 /// suspend()は実行前後にFutureContextの状態を確認し、必要であればキャンセル等の処理や中断を行う.
@@ -28,65 +28,88 @@ typedef FutureSuspendBlock<T> = Future<T> Function(FutureContext context);
 /// 処理が冗長になることと、Dart標準からかけ離れていくリスクがあるため、
 /// 使用箇所については慎重に検討が必要.
 class FutureContext {
+  static final _systemSubject = PublishSubject<FutureContext>();
+
   /// 親Context.
-  final FutureContext? _parent;
+  final Set<FutureContext> _group;
 
-  final _notify = Notify();
+  /// 現在の状態
+  var _state = _ContextState.active;
 
-  /// 発生済みエラー
-  Exception? _error;
+  /// 空のFutureContextを作成する.
+  FutureContext() : _group = const {};
 
-  /// 処理が完了している場合true.
-  // ignore: prefer_final_fields
-  bool _done = false;
+  /// 指定した親Contextを持つFutureContextを作成する.
+  FutureContext.child(FutureContext parent) : _group = {parent};
 
-  factory FutureContext() => FutureContext._launch(
-        parent: null,
-      );
-
-  FutureContext._launch({FutureContext? parent}) : _parent = parent;
+  /// 指定した複数の親Contextを持つFutureContextを作成する.
+  FutureContext.group(Iterable<FutureContext> group) : _group = group.toSet();
 
   /// 処理が継続中の場合trueを返却する.
   bool get isActive {
-    if (_parent != null && !_parent!.isActive) {
-      return false;
+    // 一つでも非アクティブなものがあれば、このContextも非アクティブ.
+    for (final c in _group) {
+      if (!c.isActive) {
+        return false;
+      }
     }
-    return !_done && _error == null && !_notify.isClosed;
+    return _state == _ContextState.active;
   }
 
   /// 処理がキャンセル済みの場合true.
   bool get isCanceled {
-    if (_parent != null && _parent!.isCanceled) {
+    // 軽量処理を選考して呼び出す
+    if (_state == _ContextState.canceled) {
       return true;
     }
-    return _error is CancellationException;
+
+    // 一つでもキャンセルされていたら、このContextもキャンセルされている.
+    for (final c in _group) {
+      if (c.isCanceled) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// キャンセル状態をハンドリングするStreamを返却する.
+  Stream<bool> get isCanceledStream {
+    if (isCanceled) {
+      return Stream.value(true);
+    } else {
+      return _systemSubject.map((event) => isCanceled).distinct();
+    }
   }
 
   /// Futureをキャンセルする.
   /// すでにキャンセル済みの場合は何もしない.
-  void cancel(String message) {
-    _cancel(CancellationException(message));
-  }
+  Future close() => _closeWith(next: _ContextState.canceled);
 
   /// 指定時間Contextを停止させる.
   /// delayed()の最中にキャンセルが発生した場合、速やかにContext処理は停止する.
   ///
   /// e.g.
   /// context.delayed(Duration(seconds: 1));
-  Future delayed(final Duration duration) async {
-    _resume();
-    await _notify.delay(duration);
-    _resume();
-  }
-
-  Future dispose() async {
-    await _notify.dispose();
-    cancel('FutureContext.dispose()');
-  }
-
-  /// このFutureContextに紐付いたChannelオブジェクトを生成する.
-  /// このFutureContextが [cancel] されたとき、自動的にChannelもキャンセル扱いとなる.
-  NotifyChannel<T> makeChannel<T>() => NotifyChannel(_notify);
+  ///
+  /// NOTE.
+  /// 内部実装では [duration] が複数回に分割されて実行されることで、
+  /// 細かくキャンセル処理を行う.
+  Future delayed(final Duration duration) async => suspend((context) async {
+        final endAt = DateTime.now().add(duration);
+        const split = Duration(milliseconds: 256);
+        while (context.isActive) {
+          final duration = endAt.difference(DateTime.now());
+          if (duration < split) {
+            if (!duration.isNegative) {
+              await Future<void>.delayed(duration);
+            }
+            return;
+          } else {
+            await Future<void>.delayed(split);
+            _notify();
+          }
+        }
+      });
 
   /// 非同期処理の特定1ブロックを実行する.
   /// これはFutureContext<T>の実行最小単位として機能する.
@@ -95,34 +118,37 @@ class FutureContext {
   ///
   /// 開発者は可能な限り細切れに suspend() に処理を分割することで、
   /// 処理の速やかな中断のサポートを受けることができる.
+  ///
+  /// suspend()関数は1コールのオーバーヘッドが大きいため、
+  /// 内部でキャンセル処理が必要なほど長い場合に利用する.
+  @internal
   Future<T2> suspend<T2>(FutureSuspendBlock<T2> block) async {
+    _notify();
     _resume();
-    final channel = NotifyChannel<Tuple2<T2?, Exception?>>(_notify);
+    (T2?, Exception?)? result;
     unawaited(() async {
       try {
-        final value = await block(this);
-        if (!channel.isClosed) {
-          channel.send(Tuple2(value, null));
-        }
+        result = (await block(this), null);
       } on Exception catch (e) {
-        if (!channel.isClosed) {
-          channel.send(Tuple2(null, e));
-        }
+        result = (null, e);
+      } finally {
+        _notify();
       }
     }());
-    try {
-      final pair = await channel.receive();
-      if (pair.item2 != null) {
-        throw pair.item2!;
-      }
+
+    // タスクが完了するまで待つ
+    while (result == null) {
+      await _wait();
       _resume();
-      return pair.item1 as T2;
-    } on Exception catch (_) {
-      if (_error != null) {
-        throw _error!;
-      } else {
-        rethrow;
-      }
+    }
+
+    final item = result?.$1;
+    final exception = result?.$2;
+
+    if (exception != null) {
+      throw exception;
+    } else {
+      return item as T2;
     }
   }
 
@@ -130,94 +156,52 @@ class FutureContext {
   ///
   /// タイムアウトが発生した場合、
   /// block()は [TimeoutCancellationException] が発生して終了する.
+  @internal
   Future<T2> withTimeout<T2>(
-      Duration timeout, FutureSuspendBlock<T2> block) async {
-    final child = FutureContext._launch(parent: this);
-    final task = child.suspend(block).timeout(timeout);
+    Duration timeout,
+    FutureSuspendBlock<T2> block,
+  ) async {
+    final child = FutureContext.child(this);
     try {
-      return await task;
+      return await child.suspend(block).timeout(timeout);
     } on TimeoutException catch (e) {
       throw TimeoutCancellationException(
         e.message ?? 'withTimeout<$T2>',
         timeout,
       );
     } finally {
-      unawaited(child.dispose());
+      unawaited(child.close());
     }
   }
 
-  /// [Stream] の有効期限をこのインスタンスに合わせる.
-  /// Listen側が終了するか、このFutureContextが閉じられると転送を終了する.
-  Stream<T2> wrapStream<T2>(Stream<T2> stream) {
-    final subject = PublishSubject<T2>();
-
-    // 入れ違いを防ぐため、最初にStreamを作る
-    final result = () async* {
-      await for (final v in subject.stream) {
-        yield v;
-      }
-    }();
-
-    // stream -> channel -> subjectでデータを流す
-    // FutureContextの寿命よりも早くStreamが終了した場合、Subjectを閉じて強制終了させる.
-    final channel = makeChannel<T2>();
-    final subscription = stream.listen((event) => channel.send(event));
-    subscription.onDone(() => subject.close());
-
-    unawaited(() async {
-      try {
-        while (isActive) {
-          try {
-            subject.add(await channel.receive());
-          } on CancellationException catch (_) {
-            return;
-          }
-        }
-      } finally {
-        if (!subject.isClosed) {
-          unawaited(subject.close());
-        }
-        unawaited(subscription.cancel());
-      }
-    }());
-    return result;
-  }
-
-  void _cancel(CancellationException e) {
-    if (isCanceled) {
-      return;
+  Future _closeWith({
+    required _ContextState next,
+  }) async {
+    if (_state == _ContextState.active) {
+      _state = next;
     }
-    assert(_error == null, 'FutureContext invalid state');
-    _error = e;
-    // 1サイクル遅れてDisposeを実行する.
-    unawaited(() async {
-      await Future<void>.delayed(Duration.zero);
-      await dispose();
-    }());
+    _notify();
   }
 
-  // /// 子Jobを作成する.
-  // /// 親がキャンセルされると、子は自動的にキャンセルされる.
-  // Job<T2> launch<T2>(LaunchFunction<T2> block) {
-  //   _resume();
-  //   final context = FutureContext._launch(parent: this);
-  //   return Job<T2>._init(context, block);
-  // }
+  void _notify() {
+    _systemSubject.add(this);
+  }
 
   /// 非同期処理の状態をチェックし、必要であれはキャンセル処理を発生させる.
   void _resume() {
-    _parent?._resume(); // 親のResumeチェック
-
     // 自分自身のResume Check.
-    if (_error != null) {
-      throw _error!;
+    if (_state == _ContextState.canceled) {
+      throw CancellationException('FutureContext is canceled.');
+    }
+    for (final c in _group) {
+      c._resume();
     }
   }
 
-  /// 制御に紐付かないFutureContextを生成する.
-  /// 子Jobの統括などの利用を想定する.
-  @Deprecated('replace to FutureContext()')
-  static FutureContext empty() {
-    return FutureContext._launch();
-  }
+  Future _wait() async => _systemSubject.first;
+}
+
+enum _ContextState {
+  active,
+  canceled,
 }

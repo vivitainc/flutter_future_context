@@ -8,10 +8,26 @@ import 'package:future_context/future_context.dart';
 void main() {
   late FutureContext context;
   setUp(() async {
+    debugPrint('setUp');
     context = FutureContext();
+
+    unawaited(() async {
+      await for (final cancel in context.isCanceledStream) {
+        debugPrint('isCanceled: $cancel');
+      }
+    }());
   });
   tearDown(() async {
-    await context.dispose();
+    debugPrint('context close');
+    await context.close();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    // キャンセル済みなので、これは常にtrueである
+    expect(
+      await context.isCanceledStream.where((event) => event).first,
+      isTrue,
+    );
+    debugPrint('tearDown');
   });
 
   test('suspend', () async {
@@ -20,6 +36,16 @@ void main() {
       return 100;
     });
     expect(value, 100);
+  }, timeout: const Timeout(Duration(seconds: 2)));
+
+  test('delayed', () async {
+    final sw = Stopwatch();
+    sw.start();
+    await context.delayed(const Duration(milliseconds: 110));
+    sw.stop();
+    debugPrint('elapsedMilliseconds: ${sw.elapsedMilliseconds} ms');
+    expect(sw.elapsedMilliseconds, greaterThanOrEqualTo(110));
+    expect(sw.elapsedMilliseconds, lessThan(120));
   });
 
   test('timeout(success)', () async {
@@ -63,7 +89,7 @@ void main() {
   test('cancel', () async {
     unawaited(() async {
       await Future<void>.delayed(const Duration(milliseconds: 100));
-      context.cancel('FutureContext.cancel()');
+      await context.close();
     }());
     try {
       final value = await context.suspend((context) async {
@@ -76,5 +102,23 @@ void main() {
       debugPrint('$e, $stackTrace');
       // OK!
     }
+  });
+
+  test('group', () async {
+    final ctx2 = FutureContext();
+    final groupContext = FutureContext.group({context, ctx2});
+
+    expect(ctx2.isActive, isTrue);
+    expect(groupContext.isActive, isTrue);
+    expect(ctx2.isCanceled, isFalse);
+    expect(groupContext.isCanceled, isFalse);
+
+    // 親をキャンセル
+    await ctx2.close();
+
+    expect(ctx2.isActive, isFalse);
+    expect(groupContext.isActive, isFalse);
+    expect(ctx2.isCanceled, isTrue);
+    expect(groupContext.isCanceled, isTrue);
   });
 }
