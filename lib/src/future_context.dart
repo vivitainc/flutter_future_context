@@ -77,7 +77,10 @@ class FutureContext {
     if (isCanceled) {
       return Stream.value(true);
     } else {
-      return _systemSubject.map((event) => isCanceled).distinct();
+      return ConcatStream([
+        Stream.value(false),
+        _systemSubject.map((event) => isCanceled),
+      ]).distinct();
     }
   }
 
