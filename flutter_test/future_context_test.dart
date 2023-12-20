@@ -48,6 +48,21 @@ void main() {
       expect(sw.elapsedMilliseconds, greaterThanOrEqualTo(110));
       expect(sw.elapsedMilliseconds, lessThan(120));
     });
+
+    test('error', () async {
+      try {
+        await context.suspend((context) async {
+          await Future.delayed(const Duration(milliseconds: 100));
+          throw Exception('error');
+        });
+        // ignore: dead_code
+        fail('always Nothing');
+        // ignore: avoid_catches_without_on_clauses
+      } catch (e, stackTrace) {
+        debugPrint('$e, $stackTrace');
+      }
+    });
+
     test('cancel', () async {
       unawaited(() async {
         await Future<void>.delayed(const Duration(milliseconds: 100));

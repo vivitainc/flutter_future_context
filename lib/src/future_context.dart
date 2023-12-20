@@ -12,7 +12,8 @@ typedef FutureSuspendBlock<T> = Future<T> Function(FutureContext context);
 /// 非同期（Async）状態を管理する.
 /// FutureContextの目標はキャンセル可能な非同期処理のサポートである.
 ///
-/// 処理終了後、必ず [close] をコールする必要がある.
+/// 処理終了後、必ずしも [close] をコールする必要はない（メモリリークはしない）が、
+/// 設計上は [close] をコールすることを推奨する.
 ///
 /// 開発者はFutureContext.suspend()に関数を渡し、実行を行う.
 /// suspend()は実行前後にFutureContextの状態を確認し、必要であればキャンセル等の処理や中断を行う.
@@ -114,30 +115,38 @@ class FutureContext {
   Future<T2> suspend<T2>(FutureSuspendBlock<T2> block) async {
     _notify();
     _resume();
-    (T2?, Exception?)? result;
+
+    final stackTrace = StackTrace.current;
+    final complete = Completer<T2>();
+
     unawaited(() async {
       try {
-        result = (await block(this), null);
-      } on Exception catch (e) {
-        result = (null, e);
+        final result = await block(this);
+        if (!complete.isCompleted) {
+          complete.complete(result);
+        }
+        // ignore: avoid_catches_without_on_clauses
+      } catch (e, trace) {
+        if (!complete.isCompleted) {
+          complete.completeError(
+              e, StackTrace.fromString('$trace\n$stackTrace'));
+        }
       } finally {
         _notify();
       }
     }());
-
-    // タスクが完了するまで待つ
-    while (result == null) {
-      await _wait();
-      _resume();
-    }
-
-    final item = result?.$1;
-    final exception = result?.$2;
-
-    if (exception != null) {
-      throw exception;
-    } else {
-      return item as T2;
+    final subscribe = isCanceledStream.where((event) => event).listen((event) {
+      if (!complete.isCompleted) {
+        complete.completeError(
+          CancellationException('FutureContext is canceled.'),
+          stackTrace,
+        );
+      }
+    });
+    try {
+      return await complete.future;
+    } finally {
+      unawaited(subscribe.cancel());
     }
   }
 
@@ -185,8 +194,6 @@ class FutureContext {
       c._resume();
     }
   }
-
-  Future _wait() async => _systemSubject.first;
 }
 
 enum _ContextState {
