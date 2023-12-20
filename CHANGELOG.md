@@ -1,3 +1,8 @@
+## 0.0.2+7
+
+* Chg: 中断処理の最適化
+* Del: TimeoutCanellationExceptionを削除してTimeoutExceptionに統合
+
 ## 0.0.2+6
 
 * Fix: キャンセルメッセージが正常に反映されない場合がある問題を修正
