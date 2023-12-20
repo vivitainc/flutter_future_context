@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:async_notify/async_notify.dart';
-import 'package:meta/meta.dart';
 import 'package:rxdart/rxdart.dart';
 
 import 'timeout_cancellation_exception.dart';
@@ -112,7 +111,6 @@ class FutureContext {
   ///
   /// suspend()関数は1コールのオーバーヘッドが大きいため、
   /// 内部でキャンセル処理が必要なほど長い場合に利用する.
-  @internal
   Future<T2> suspend<T2>(FutureSuspendBlock<T2> block) async {
     _notify();
     _resume();
@@ -147,7 +145,6 @@ class FutureContext {
   ///
   /// タイムアウトが発生した場合、
   /// block()は [TimeoutCancellationException] が発生して終了する.
-  @internal
   Future<T2> withTimeout<T2>(
     Duration timeout,
     FutureSuspendBlock<T2> block,
