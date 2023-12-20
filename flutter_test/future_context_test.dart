@@ -125,8 +125,8 @@ void main() {
           },
         );
         fail('not calling');
-      } on TimeoutCancellationException catch (_) {
-        // OK!
+      } on TimeoutException catch (e, stackTrace) {
+        debugPrint('OK, $e, $stackTrace');
       }
     });
     test('timeout(Blocking)', () async {
@@ -138,8 +138,8 @@ void main() {
           },
         );
         fail('not calling');
-      } on TimeoutCancellationException catch (e) {
-        debugPrint('$e');
+      } on TimeoutException catch (e, stackTrace) {
+        debugPrint('OK, $e, $stackTrace');
       }
     });
   });

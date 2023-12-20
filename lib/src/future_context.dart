@@ -3,8 +3,6 @@ import 'dart:async';
 import 'package:async_notify/async_notify.dart';
 import 'package:rxdart/rxdart.dart';
 
-import 'timeout_cancellation_exception.dart';
-
 /// 非同期処理のキャンセル不可能な1ブロック処理
 /// このブロック完了後、FutureContextは復帰チェックを行い、必要であればキャンセル等を行う.
 typedef FutureSuspendBlock<T> = Future<T> Function(FutureContext context);
@@ -153,7 +151,7 @@ class FutureContext {
   /// タイムアウト付きの非同期処理を開始する.
   ///
   /// タイムアウトが発生した場合、
-  /// block()は [TimeoutCancellationException] が発生して終了する.
+  /// block()は [TimeoutException] が発生して終了する.
   Future<T2> withTimeout<T2>(
     Duration timeout,
     FutureSuspendBlock<T2> block,
@@ -162,10 +160,7 @@ class FutureContext {
     try {
       return await child.suspend(block).timeout(timeout);
     } on TimeoutException catch (e) {
-      throw TimeoutCancellationException(
-        e.message ?? 'withTimeout<$T2>',
-        timeout,
-      );
+      throw TimeoutException('${e.message}, timeout: $timeout');
     } finally {
       unawaited(child.close());
     }
