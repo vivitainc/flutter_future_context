@@ -34,7 +34,7 @@ extension StreamWithContext<T> on Stream<T> {
       final value = event.$1;
       final isCanceled = event.$2;
       if (isCanceled) {
-        throw CancellationException('FutureContext is canceled');
+        throw CancellationException('${context.toString()} is canceled');
       }
       return value;
     });

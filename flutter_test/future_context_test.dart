@@ -102,6 +102,26 @@ void main() {
       expect(ctx2.isCanceled, isTrue);
       expect(groupContext.isCanceled, isTrue);
     });
+    test('group.cancel', () async {
+      final ctx2 = FutureContext(tag: 'second');
+      final groupContext = FutureContext.group(
+        {context, ctx2},
+        tag: 'group',
+      );
+
+      unawaited(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        await groupContext.close();
+      }());
+
+      try {
+        await groupContext.delayed(const Duration(seconds: 10));
+        fail('always Nothing');
+      } on CancellationException catch (e, stackTrace) {
+        debugPrint('throws CancellationException');
+        debugPrint('$e, $stackTrace');
+      }
+    });
   });
 
   group('FutureContext.timeout', () {

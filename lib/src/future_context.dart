@@ -34,14 +34,25 @@ class FutureContext {
   /// 現在の状態
   var _state = _ContextState.active;
 
+  /// キャンセル識別用タグ
+  final String? tag;
+
   /// 空のFutureContextを作成する.
-  FutureContext() : _group = const {};
+  FutureContext({
+    this.tag,
+  }) : _group = const {};
 
   /// 指定した親Contextを持つFutureContextを作成する.
-  FutureContext.child(FutureContext parent) : _group = {parent};
+  FutureContext.child(
+    FutureContext parent, {
+    this.tag,
+  }) : _group = {parent};
 
   /// 指定した複数の親Contextを持つFutureContextを作成する.
-  FutureContext.group(Iterable<FutureContext> group) : _group = group.toSet();
+  FutureContext.group(
+    Iterable<FutureContext> group, {
+    this.tag,
+  }) : _group = group.toSet();
 
   /// 処理が継続中の場合trueを返却する.
   bool get isActive {
@@ -79,6 +90,27 @@ class FutureContext {
         Stream.value(false),
         _systemSubject.map((event) => isCanceled),
       ]).distinct();
+    }
+  }
+
+  String get _optimizedTag {
+    final tag = this.tag;
+    if (_group.isNotEmpty) {
+      final builder = StringBuffer();
+      builder.write('[');
+      var i = 0;
+      for (final p in _group) {
+        if (i > 0) {
+          builder.write(',');
+        }
+        builder.write(p._optimizedTag);
+        ++i;
+      }
+      builder.write(']#');
+      builder.write(tag ?? 'NoName');
+      return builder.toString();
+    } else {
+      return tag ?? 'NoName';
     }
   }
 
@@ -136,7 +168,7 @@ class FutureContext {
     final subscribe = isCanceledStream.where((event) => event).listen((event) {
       if (!complete.isCompleted) {
         complete.completeError(
-          CancellationException('FutureContext is canceled.'),
+          CancellationException('${toString()} is canceled.'),
           stackTrace,
         );
       }
@@ -147,6 +179,9 @@ class FutureContext {
       unawaited(subscribe.cancel());
     }
   }
+
+  @override
+  String toString() => 'FutureContext($_optimizedTag)';
 
   /// タイムアウト付きの非同期処理を開始する.
   ///
@@ -183,7 +218,7 @@ class FutureContext {
   void _resume() {
     // 自分自身のResume Check.
     if (_state == _ContextState.canceled) {
-      throw CancellationException('FutureContext is canceled.');
+      throw CancellationException('${toString()} is canceled.');
     }
     for (final c in _group) {
       c._resume();
