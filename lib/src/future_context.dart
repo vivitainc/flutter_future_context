@@ -93,26 +93,14 @@ class FutureContext {
   ///
   /// e.g.
   /// context.delayed(Duration(seconds: 1));
-  ///
-  /// NOTE.
-  /// 内部実装では [duration] が複数回に分割されて実行されることで、
-  /// 細かくキャンセル処理を行う.
-  Future delayed(final Duration duration) async => suspend((context) async {
-        final endAt = DateTime.now().add(duration);
-        const split = Duration(milliseconds: 256);
-        while (context.isActive) {
-          final duration = endAt.difference(DateTime.now());
-          if (duration < split) {
-            if (!duration.isNegative) {
-              await Future<void>.delayed(duration);
-            }
-            return;
-          } else {
-            await Future<void>.delayed(split);
-            _notify();
-          }
-        }
-      });
+  Future delayed(final Duration duration) async {
+    _resume();
+    await isCanceledStream
+        .where((event) => event)
+        .first
+        .timeout(duration, onTimeout: () => false);
+    _resume();
+  }
 
   /// 非同期処理の特定1ブロックを実行する.
   /// これはFutureContext<T>の実行最小単位として機能する.

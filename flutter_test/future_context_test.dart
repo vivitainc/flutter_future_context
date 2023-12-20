@@ -30,7 +30,7 @@ void main() {
     debugPrint('tearDown');
   });
 
-  group('FutureContext', () {
+  group('FutureContext.suspend', () {
     test('suspend', () async {
       final value = await context.suspend((context) async {
         await Future<void>.delayed(const Duration(seconds: 1));
@@ -48,7 +48,48 @@ void main() {
       expect(sw.elapsedMilliseconds, greaterThanOrEqualTo(110));
       expect(sw.elapsedMilliseconds, lessThan(120));
     });
+    test('cancel', () async {
+      unawaited(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        await context.close();
+      }());
+      try {
+        final value = await context.suspend((context) async {
+          try {
+            await context.delayed(const Duration(seconds: 10));
+            return 100;
+          } finally {
+            debugPrint('finish suspend');
+          }
+        });
+        fail('always Nothing: $value');
+      } on CancellationException catch (e, stackTrace) {
+        debugPrint('throws CancellationException');
+        debugPrint('$e, $stackTrace');
+        // OK!
+      }
+    });
 
+    test('group', () async {
+      final ctx2 = FutureContext();
+      final groupContext = FutureContext.group({context, ctx2});
+
+      expect(ctx2.isActive, isTrue);
+      expect(groupContext.isActive, isTrue);
+      expect(ctx2.isCanceled, isFalse);
+      expect(groupContext.isCanceled, isFalse);
+
+      // 親をキャンセル
+      await ctx2.close();
+
+      expect(ctx2.isActive, isFalse);
+      expect(groupContext.isActive, isFalse);
+      expect(ctx2.isCanceled, isTrue);
+      expect(groupContext.isCanceled, isTrue);
+    });
+  });
+
+  group('FutureContext.timeout', () {
     test('timeout(success)', () async {
       final result = await context.withTimeout<int>(
         const Duration(seconds: 10),
@@ -85,42 +126,6 @@ void main() {
       } on TimeoutCancellationException catch (e) {
         debugPrint('$e');
       }
-    });
-
-    test('cancel', () async {
-      unawaited(() async {
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-        await context.close();
-      }());
-      try {
-        final value = await context.suspend((context) async {
-          await Future<void>.delayed(const Duration(seconds: 1));
-          return 100;
-        });
-        fail('always Nothing: $value');
-      } on CancellationException catch (e, stackTrace) {
-        debugPrint('throws CancellationException');
-        debugPrint('$e, $stackTrace');
-        // OK!
-      }
-    });
-
-    test('group', () async {
-      final ctx2 = FutureContext();
-      final groupContext = FutureContext.group({context, ctx2});
-
-      expect(ctx2.isActive, isTrue);
-      expect(groupContext.isActive, isTrue);
-      expect(ctx2.isCanceled, isFalse);
-      expect(groupContext.isCanceled, isFalse);
-
-      // 親をキャンセル
-      await ctx2.close();
-
-      expect(ctx2.isActive, isFalse);
-      expect(groupContext.isActive, isFalse);
-      expect(ctx2.isCanceled, isTrue);
-      expect(groupContext.isCanceled, isTrue);
     });
   });
 
