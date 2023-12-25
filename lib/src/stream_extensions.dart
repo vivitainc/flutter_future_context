@@ -1,39 +1,42 @@
+import 'dart:async';
+
 import 'package:async_notify/async_notify.dart';
 import 'package:rxdart/rxdart.dart';
 
 import 'future_context.dart';
 
 extension StreamWithContext<T> on Stream<T> {
-  static final _systemNotify = Notify();
+  static final _notify = PublishSubject<dynamic>();
 
   /// StreamとFutureContextを統合して新しいStreamを作成する.
   ///
   /// [context] がキャンセルされたタイミングで、このStreamもキャンセルされる.
   /// キャンセルされる場合、 [CancellationException] が投げられる点に注意すること.
-  Stream<T> withContext(FutureContext context) async* {
-    final channel = NotifyChannel<(T?, bool, Exception?)>(_systemNotify);
-    final subscription = map((event) => (event, false, null))
-        .handleError(
-            (e, stackTrace) => channel.send((null, true, e as Exception)))
-        .doOnDone(() => channel.send((null, true, null)))
-        .listen((event) => channel.send(event));
+  Stream<T> withContext(FutureContext context) {
+    final key = this;
+    var done = false;
 
-    try {
-      while (true) {
-        final next = await context.suspend((context) => channel.receive());
-        final item = next.$1;
-        final done = next.$2;
-        final exception = next.$3;
-        if (exception != null) {
-          throw exception;
-        } else if (done) {
-          return;
-        } else {
-          yield item as T;
-        }
+    // データ本体、キャンセルチェック、終了通知の３つから合成される.
+    return CombineLatestStream.combine3(
+      doOnDone(() {
+        done = true;
+        _notify.add(this);
+      }),
+      context.isCanceledStream,
+      // 終了通知がない場合、Streamがcloseされずにフリーズされてしまう.
+      // notifyを流すことで、確実にstreamを終了させる.
+      ConcatStream([
+        Stream.value(null),
+        _notify.stream.where((event) => event == key),
+      ]),
+      (a, b, _) => (a, b),
+    ).takeWhile((element) => !done).map((event) {
+      final value = event.$1;
+      final isCanceled = event.$2;
+      if (isCanceled) {
+        throw CancellationException('${context.toString()} is canceled');
       }
-    } finally {
-      await subscription.cancel();
-    }
+      return value;
+    });
   }
 }

@@ -1,10 +1,7 @@
 import 'dart:async';
 
 import 'package:async_notify/async_notify.dart';
-import 'package:meta/meta.dart';
 import 'package:rxdart/rxdart.dart';
-
-import 'timeout_cancellation_exception.dart';
 
 /// 非同期処理のキャンセル不可能な1ブロック処理
 /// このブロック完了後、FutureContextは復帰チェックを行い、必要であればキャンセル等を行う.
@@ -13,7 +10,8 @@ typedef FutureSuspendBlock<T> = Future<T> Function(FutureContext context);
 /// 非同期（Async）状態を管理する.
 /// FutureContextの目標はキャンセル可能な非同期処理のサポートである.
 ///
-/// 処理終了後、必ず [close] をコールする必要がある.
+/// 処理終了後、必ずしも [close] をコールする必要はない（メモリリークはしない）が、
+/// 設計上は [close] をコールすることを推奨する.
 ///
 /// 開発者はFutureContext.suspend()に関数を渡し、実行を行う.
 /// suspend()は実行前後にFutureContextの状態を確認し、必要であればキャンセル等の処理や中断を行う.
@@ -36,14 +34,25 @@ class FutureContext {
   /// 現在の状態
   var _state = _ContextState.active;
 
+  /// キャンセル識別用タグ
+  final String? tag;
+
   /// 空のFutureContextを作成する.
-  FutureContext() : _group = const {};
+  FutureContext({
+    this.tag,
+  }) : _group = const {};
 
   /// 指定した親Contextを持つFutureContextを作成する.
-  FutureContext.child(FutureContext parent) : _group = {parent};
+  FutureContext.child(
+    FutureContext parent, {
+    this.tag,
+  }) : _group = {parent};
 
   /// 指定した複数の親Contextを持つFutureContextを作成する.
-  FutureContext.group(Iterable<FutureContext> group) : _group = group.toSet();
+  FutureContext.group(
+    Iterable<FutureContext> group, {
+    this.tag,
+  }) : _group = group.toSet();
 
   /// 処理が継続中の場合trueを返却する.
   bool get isActive {
@@ -77,7 +86,31 @@ class FutureContext {
     if (isCanceled) {
       return Stream.value(true);
     } else {
-      return _systemSubject.map((event) => isCanceled).distinct();
+      return ConcatStream([
+        Stream.value(false),
+        _systemSubject.map((event) => isCanceled),
+      ]).distinct();
+    }
+  }
+
+  String get _optimizedTag {
+    final tag = this.tag;
+    if (_group.isNotEmpty) {
+      final builder = StringBuffer();
+      builder.write('[');
+      var i = 0;
+      for (final p in _group) {
+        if (i > 0) {
+          builder.write(',');
+        }
+        builder.write(p._optimizedTag);
+        ++i;
+      }
+      builder.write(']#');
+      builder.write(tag ?? 'NoName');
+      return builder.toString();
+    } else {
+      return tag ?? 'NoName';
     }
   }
 
@@ -90,26 +123,14 @@ class FutureContext {
   ///
   /// e.g.
   /// context.delayed(Duration(seconds: 1));
-  ///
-  /// NOTE.
-  /// 内部実装では [duration] が複数回に分割されて実行されることで、
-  /// 細かくキャンセル処理を行う.
-  Future delayed(final Duration duration) async => suspend((context) async {
-        final endAt = DateTime.now().add(duration);
-        const split = Duration(milliseconds: 256);
-        while (context.isActive) {
-          final duration = endAt.difference(DateTime.now());
-          if (duration < split) {
-            if (!duration.isNegative) {
-              await Future<void>.delayed(duration);
-            }
-            return;
-          } else {
-            await Future<void>.delayed(split);
-            _notify();
-          }
-        }
-      });
+  Future delayed(final Duration duration) async {
+    _resume();
+    await isCanceledStream
+        .where((event) => event)
+        .first
+        .timeout(duration, onTimeout: () => false);
+    _resume();
+  }
 
   /// 非同期処理の特定1ブロックを実行する.
   /// これはFutureContext<T>の実行最小単位として機能する.
@@ -121,42 +142,51 @@ class FutureContext {
   ///
   /// suspend()関数は1コールのオーバーヘッドが大きいため、
   /// 内部でキャンセル処理が必要なほど長い場合に利用する.
-  @internal
   Future<T2> suspend<T2>(FutureSuspendBlock<T2> block) async {
     _notify();
     _resume();
-    (T2?, Exception?)? result;
+
+    final stackTrace = StackTrace.current;
+    final complete = Completer<T2>();
+
     unawaited(() async {
       try {
-        result = (await block(this), null);
-      } on Exception catch (e) {
-        result = (null, e);
+        final result = await block(this);
+        if (!complete.isCompleted) {
+          complete.complete(result);
+        }
+        // ignore: avoid_catches_without_on_clauses
+      } catch (e, trace) {
+        if (!complete.isCompleted) {
+          complete.completeError(
+              e, StackTrace.fromString('$trace\n$stackTrace'));
+        }
       } finally {
         _notify();
       }
     }());
-
-    // タスクが完了するまで待つ
-    while (result == null) {
-      await _wait();
-      _resume();
-    }
-
-    final item = result?.$1;
-    final exception = result?.$2;
-
-    if (exception != null) {
-      throw exception;
-    } else {
-      return item as T2;
+    final subscribe = isCanceledStream.where((event) => event).listen((event) {
+      if (!complete.isCompleted) {
+        complete.completeError(
+          CancellationException('${toString()} is canceled.'),
+          stackTrace,
+        );
+      }
+    });
+    try {
+      return await complete.future;
+    } finally {
+      unawaited(subscribe.cancel());
     }
   }
+
+  @override
+  String toString() => 'FutureContext($_optimizedTag)';
 
   /// タイムアウト付きの非同期処理を開始する.
   ///
   /// タイムアウトが発生した場合、
-  /// block()は [TimeoutCancellationException] が発生して終了する.
-  @internal
+  /// block()は [TimeoutException] が発生して終了する.
   Future<T2> withTimeout<T2>(
     Duration timeout,
     FutureSuspendBlock<T2> block,
@@ -165,10 +195,7 @@ class FutureContext {
     try {
       return await child.suspend(block).timeout(timeout);
     } on TimeoutException catch (e) {
-      throw TimeoutCancellationException(
-        e.message ?? 'withTimeout<$T2>',
-        timeout,
-      );
+      throw TimeoutException('${e.message}, timeout: $timeout');
     } finally {
       unawaited(child.close());
     }
@@ -191,14 +218,12 @@ class FutureContext {
   void _resume() {
     // 自分自身のResume Check.
     if (_state == _ContextState.canceled) {
-      throw CancellationException('FutureContext is canceled.');
+      throw CancellationException('${toString()} is canceled.');
     }
     for (final c in _group) {
       c._resume();
     }
   }
-
-  Future _wait() async => _systemSubject.first;
 }
 
 enum _ContextState {

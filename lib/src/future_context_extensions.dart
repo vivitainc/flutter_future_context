@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:async_notify/async_notify.dart';
 
 import 'future_context.dart';
-import 'timeout_cancellation_exception.dart';
 
 /// 指定した [context] を使用してsuspend関数を実行する.
 /// 実行中に [context] がキャンセルされた場合、この関数は [CancellationException] を投げて早期終了する.
@@ -46,7 +45,7 @@ Future<T> withContextGroup<T>(
 
 /// 指定した [context] を使用してsuspend関数を実行する.
 /// 実行中に [context] がキャンセルされた場合、この関数は [CancellationException] を投げて早期終了する.
-/// また、指定した [timeout] が経過した場合も [TimeoutCancellationException] を投げて早期終了する.
+/// また、指定した [timeout] が経過した場合は [TimeoutException] を投げて早期終了する.
 ///
 /// contextがnullである場合、空のFutureContextが生成される.
 /// 生成された場合は自動的に [FutureContext.close] がコールされる.
