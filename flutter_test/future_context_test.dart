@@ -180,7 +180,10 @@ void main() {
     test('cancel', () async {
       final stream = Stream.periodic(
         const Duration(milliseconds: 100),
-        (i) => i,
+        (i) {
+          debugPrint('yield: $i');
+          return i;
+        },
       ).withContext(context);
       unawaited(() async {
         await Future<void>.delayed(const Duration(milliseconds: 500));
@@ -198,6 +201,8 @@ void main() {
         debugPrint('$e, $stackTrace');
         expect(received, isNot(equals(0)));
       }
+
+      await Future<void>.delayed(const Duration(milliseconds: 1000));
     });
 
     test('error', () async {
@@ -217,6 +222,70 @@ void main() {
         fail('always Nothing');
       } on Exception catch (e, stackTrace) {
         debugPrint('catch OK: $e, $stackTrace');
+      }
+    });
+
+    test('cancel with throw', () async {
+      final stream = context.isCanceledStream.map((event) {
+        if (event) {
+          throw CancellationException('${DateTime.now()} cancel');
+        }
+        return event;
+      });
+      unawaited(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+        await context.close();
+      }());
+      try {
+        await for (final v in stream) {
+          debugPrint('${DateTime.now()} stream: $v');
+        }
+        fail('always Nothing');
+      } on CancellationException catch (e, stackTrace) {
+        debugPrint('${DateTime.now()} throws CancellationException');
+        debugPrint('$e, $stackTrace');
+      }
+    });
+
+    test('error with close', () async {
+      final ctx = FutureContext();
+      final stream1 = () async* {
+        try {
+          debugPrint('${DateTime.now()} emit 1-1');
+          yield "${DateTime.now()} 1-1";
+          await Future<void>.delayed(const Duration(milliseconds: 1000));
+          debugPrint('${DateTime.now()} emit 1-2');
+          yield "${DateTime.now()} 1-2";
+          await Future<void>.delayed(const Duration(milliseconds: 1000));
+          debugPrint('${DateTime.now()} emit 1-3');
+          yield "${DateTime.now()} 1-3";
+          await Future<void>.delayed(const Duration(milliseconds: 1000));
+          debugPrint('${DateTime.now()} throw error');
+          throw Exception('${DateTime.now()} stream1');
+        } finally {
+          debugPrint('${DateTime.now()} stream1 finally');
+        }
+      }();
+
+      try {
+        unawaited(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 1500));
+          debugPrint('${DateTime.now()} cancel');
+          await ctx.close();
+        }());
+        await for (final v in stream1.withContext(
+          ctx,
+          receiveAllValues: true,
+          withDebugLog: true,
+        )) {
+          debugPrint('${DateTime.now()} stream1: $v');
+        }
+      } on Exception catch (e, stackTrace) {
+        debugPrint('${DateTime.now()} catch OK: $e\n$stackTrace');
+      } finally {
+        debugPrint('${DateTime.now()} finally');
+        await ctx.close();
+        await Future<void>.delayed(const Duration(milliseconds: 5000));
       }
     });
   });
