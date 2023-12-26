@@ -217,11 +217,8 @@ class FutureContext {
   /// 非同期処理の状態をチェックし、必要であれはキャンセル処理を発生させる.
   void _resume() {
     // 自分自身のResume Check.
-    if (_state == _ContextState.canceled) {
+    if (isCanceled) {
       throw CancellationException('${toString()} is canceled.');
-    }
-    for (final c in _group) {
-      c._resume();
     }
   }
 }
