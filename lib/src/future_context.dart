@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:async_notify/async_notify.dart';
+import 'package:flutter/foundation.dart';
 import 'package:rxdart/rxdart.dart';
 
 /// 非同期処理のキャンセル不可能な1ブロック処理
@@ -27,6 +28,10 @@ typedef FutureSuspendBlock<T> = Future<T> Function(FutureContext context);
 /// 使用箇所については慎重に検討が必要.
 class FutureContext {
   static final _systemSubject = PublishSubject<FutureContext>();
+
+  /// このしきい値より短い時間の場合、delayed()はキャンセルチェックを行わず直接実行する.
+  /// Streamの生成・破棄コストを最小化するためである.
+  static const _delayedThreshold = Duration(milliseconds: 60);
 
   /// 親Context.
   final Set<FutureContext> _group;
@@ -84,7 +89,7 @@ class FutureContext {
   /// キャンセル状態をハンドリングするStreamを返却する.
   Stream<bool> get isCanceledStream => _isCanceledStream();
 
-  String get _optimizedTag {
+  late final String _optimizedTag = () {
     final tag = this.tag;
     if (_group.isNotEmpty) {
       final builder = StringBuffer();
@@ -103,7 +108,7 @@ class FutureContext {
     } else {
       return tag ?? 'NoName';
     }
-  }
+  }();
 
   /// Futureをキャンセルする.
   /// すでにキャンセル済みの場合は何もしない.
@@ -116,11 +121,23 @@ class FutureContext {
   /// context.delayed(Duration(seconds: 1));
   Future delayed(final Duration duration) async {
     _resume();
-    await isCanceledStream
-        .where((event) => event)
-        .first
-        .timeout(duration, onTimeout: () => false);
-    _resume();
+    // _delayedThresholdよりもdurationが小さいなら直接delayedをかける
+    if (duration < _delayedThreshold) {
+      await Future.delayed(duration);
+      _resume();
+      return;
+    } else {
+      // キャンセル最適化を行う
+      await isCanceledStream
+          .timeout(duration, onTimeout: (c) {
+            c.add(true);
+            c.close();
+            _notify();
+          })
+          .where((event) => event)
+          .first;
+      _resume();
+    }
   }
 
   /// 非同期処理の特定1ブロックを実行する.
@@ -202,19 +219,32 @@ class FutureContext {
   }
 
   Stream<bool> _isCanceledStream() async* {
-    if (isCanceled) {
-      // すでに閉じられていたら終了
-      yield true;
-      return;
-    }
-    // 閉じられるまでイベントを待つ
-    yield false;
-    await for (final _ in _systemSubject.where((event) => event == this)) {
+    try {
+      _log('isCanceledStream start');
       if (isCanceled) {
+        // すでに閉じられていたら終了
         yield true;
         return;
       }
+      // 閉じられるまでイベントを待つ
+      yield false;
+      await for (final _ in _systemSubject) {
+        if (isCanceled) {
+          yield true;
+          return;
+        }
+        yield false;
+      }
+    } finally {
+      _log('isCanceledStream close');
     }
+  }
+
+  void _log(String message) {
+    if (!kDebugMode) {
+      return;
+    }
+    debugPrint('$this $message');
   }
 
   void _notify() {

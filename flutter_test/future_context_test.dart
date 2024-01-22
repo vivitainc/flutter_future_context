@@ -49,12 +49,14 @@ void main() {
     test('delayed', () async {
       final sw = Stopwatch();
       sw.start();
+      debugPrint('start delayed');
       await context.delayed(const Duration(milliseconds: 110));
       sw.stop();
       debugPrint('elapsedMilliseconds: ${sw.elapsedMilliseconds} ms');
+      debugPrint('closed stream');
       expect(sw.elapsedMilliseconds, greaterThanOrEqualTo(110));
       expect(sw.elapsedMilliseconds, lessThan(120));
-    });
+    }, timeout: const Timeout(Duration(seconds: 2)));
 
     test('error', () async {
       try {
@@ -184,6 +186,38 @@ void main() {
       }
       expect(received, 10);
     });
+
+    // test('isCanceledStream', () async {
+    //   final context = FutureContext(tag: 'testing');
+    //   // final stream = context.isCanceledStream
+    //   //     .distinct()
+    //   //     .timeout(const Duration(seconds: 1), onTimeout: (controller) {
+    //   //   debugPrint('onTimeout');
+    //   //   return controller.close();
+    //   // });
+    //   unawaited(() async {
+    //     await Future<void>.delayed(const Duration(milliseconds: 500));
+    //     debugPrint('close context');
+    //     await context.close();
+    //   }());
+    //   await context
+    //       .isCanceledStream
+    //       // .timeout(
+    //       //   const Duration(seconds: 1),
+    //       // )
+    //       .last;
+    //   // await for (final v in context.isCanceledStream) {
+    //   //   debugPrint('isCanceledStream: $v');
+    //   // }
+    //   // unawaited(() async {
+    //   //   await Future<void>.delayed(const Duration(milliseconds: 500));
+    //   //   debugPrint('close context');
+    //   //   await context.close();
+    //   // }());
+    //   // await stream.last;
+    //   debugPrint('done');
+    // }, timeout: const Timeout(Duration(seconds: 5)));
+
     test('cancel', () async {
       final stream = Stream.periodic(
         const Duration(milliseconds: 100),
@@ -295,5 +329,49 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 5000));
       }
     });
+  });
+
+  group('runtime', () {
+    Stream<int> generate() async* {
+      try {
+        for (var i = 0; i < 100; ++i) {
+          debugPrint('emit: $i');
+          yield i;
+          await Future<void>.delayed(const Duration(milliseconds: 1000));
+        }
+      } finally {
+        debugPrint('emit finally');
+      }
+    }
+
+    test('stream future', () async {
+      try {
+        final future =
+            generate().timeout(const Duration(seconds: 1), onTimeout: (c) {
+          c.add(-1);
+          c.close();
+        })
+                // .onErrorReturn(-1)
+                .last;
+        debugPrint('receive: ${await future}');
+      } finally {
+        debugPrint('finally');
+      }
+    }, timeout: const Timeout(Duration(seconds: 10)));
+
+    test('stream generator', () async {
+      try {
+        await for (final i in generate()) {
+          debugPrint('stream: $i');
+          return;
+          // if (i >= 10) {
+          //   debugPrint('abort stream: $i');
+          //   return;
+          // }
+        }
+      } finally {
+        debugPrint('finally');
+      }
+    }, timeout: const Timeout(Duration(seconds: 10)));
   });
 }
