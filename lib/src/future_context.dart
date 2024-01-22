@@ -82,16 +82,7 @@ class FutureContext {
   }
 
   /// キャンセル状態をハンドリングするStreamを返却する.
-  Stream<bool> get isCanceledStream {
-    if (isCanceled) {
-      return Stream.value(true);
-    } else {
-      return ConcatStream([
-        Stream.value(false),
-        _systemSubject.map((event) => isCanceled),
-      ]).distinct();
-    }
-  }
+  Stream<bool> get isCanceledStream => _isCanceledStream();
 
   String get _optimizedTag {
     final tag = this.tag;
@@ -208,6 +199,22 @@ class FutureContext {
       _state = next;
     }
     _notify();
+  }
+
+  Stream<bool> _isCanceledStream() async* {
+    if (isCanceled) {
+      // すでに閉じられていたら終了
+      yield true;
+      return;
+    }
+    // 閉じられるまでイベントを待つ
+    yield false;
+    await for (final _ in _systemSubject.where((event) => event == this)) {
+      if (isCanceled) {
+        yield true;
+        return;
+      }
+    }
   }
 
   void _notify() {

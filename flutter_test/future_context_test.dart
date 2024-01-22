@@ -7,19 +7,26 @@ import 'package:future_context/future_context.dart';
 
 void main() {
   late FutureContext context;
+  late Stream<bool> canceledStream;
   setUp(() async {
     debugPrint('setUp');
     context = FutureContext();
+    canceledStream = context.isCanceledStream;
 
     unawaited(() async {
-      await for (final cancel in context.isCanceledStream) {
-        debugPrint('isCanceled: $cancel');
+      try {
+        await for (final cancel in context.isCanceledStream) {
+          debugPrint('isCanceled: $cancel');
+        }
+      } finally {
+        debugPrint('isCanceledStream done');
       }
     }());
   });
   tearDown(() async {
     debugPrint('context close');
     await context.close();
+    await canceledStream.last; // キャンセルストリームが終了してgc対象となる
     await Future<void>.delayed(const Duration(milliseconds: 100));
 
     // キャンセル済みなので、これは常にtrueである
