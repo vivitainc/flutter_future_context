@@ -244,7 +244,7 @@ class FutureContext {
     if (!kDebugMode) {
       return;
     }
-    debugPrint('$this $message');
+    debugPrint('[$this] $message');
   }
 
   void _notify() {
