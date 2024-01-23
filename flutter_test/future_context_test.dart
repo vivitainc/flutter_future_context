@@ -42,6 +42,7 @@ void main() {
       debugPrint('suspend start');
       final value = await context.suspend((context) async {
         await Future<void>.delayed(const Duration(seconds: 1));
+        debugPrint('suspend return');
         return 100;
       });
       debugPrint('suspend done');
