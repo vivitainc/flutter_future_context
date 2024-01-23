@@ -151,7 +151,6 @@ class FutureContext {
   /// suspend()関数は1コールのオーバーヘッドが大きいため、
   /// 内部でキャンセル処理が必要なほど長い場合に利用する.
   Future<T2> suspend<T2>(FutureSuspendBlock<T2> block) async {
-    _notify();
     _resume();
 
     final stackTrace = StackTrace.current;
@@ -173,7 +172,10 @@ class FutureContext {
         _notify();
       }
     }());
-    final subscribe = isCanceledStream.where((event) => event).listen((event) {
+    final subscribe = isCanceledStream
+        .takeWhile((_) => !complete.isCompleted)
+        .where((event) => event)
+        .listen((event) {
       if (!complete.isCompleted) {
         complete.completeError(
           CancellationException('${toString()} is canceled.'),
@@ -182,8 +184,11 @@ class FutureContext {
       }
     });
     try {
-      return await complete.future;
+      final result = await complete.future;
+      _resume();
+      return result;
     } finally {
+      _notify();
       await subscribe.cancel();
     }
   }
@@ -254,8 +259,12 @@ class FutureContext {
   /// 非同期処理の状態をチェックし、必要であれはキャンセル処理を発生させる.
   void _resume() {
     // 自分自身のResume Check.
-    if (isCanceled) {
-      throw CancellationException('${toString()} is canceled.');
+    try {
+      if (isCanceled) {
+        throw CancellationException('${toString()} is canceled.');
+      }
+    } finally {
+      _notify();
     }
   }
 }
