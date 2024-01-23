@@ -1,6 +1,7 @@
-## 0.0.2+10
+## 0.0.2+11
 
 * Fix: FutureContext.delayed()内部でisCanceledStreamがリークする問題を修正
+* Fix: FutureContext.suspend()内部でisCanceledStreamキャンセルできない場合がある問題を修正
 
 ## 0.0.2+9
 
