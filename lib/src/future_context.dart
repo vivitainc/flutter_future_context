@@ -184,7 +184,7 @@ class FutureContext {
     try {
       return await complete.future;
     } finally {
-      unawaited(subscribe.cancel());
+      await subscribe.cancel();
     }
   }
 
@@ -205,7 +205,7 @@ class FutureContext {
     } on TimeoutException catch (e) {
       throw TimeoutException('${e.message}, timeout: $timeout');
     } finally {
-      unawaited(child.close());
+      await child.close();
     }
   }
 

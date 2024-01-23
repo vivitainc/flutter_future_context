@@ -39,10 +39,12 @@ void main() {
 
   group('FutureContext.suspend', () {
     test('suspend', () async {
+      debugPrint('suspend start');
       final value = await context.suspend((context) async {
         await Future<void>.delayed(const Duration(seconds: 1));
         return 100;
       });
+      debugPrint('suspend done');
       expect(value, 100);
     }, timeout: const Timeout(Duration(seconds: 2)));
 
