@@ -1,3 +1,7 @@
+## 0.0.2+10
+
+* Fix: FutureContext.delayed()内部でisCanceledStreamがリークする問題を修正
+
 ## 0.0.2+9
 
 * Fix: Webビルドでdart2jsがクラッシュする問題を修正
