@@ -61,6 +61,33 @@ void main() {
       expect(sw.elapsedMilliseconds, lessThan(120));
     }, timeout: const Timeout(Duration(seconds: 2)));
 
+    test('delayed(seconds)', () async {
+      final sw = Stopwatch();
+      sw.start();
+      debugPrint('start delayed');
+      await context.delayed(const Duration(seconds: 1));
+      sw.stop();
+      debugPrint('elapsedMilliseconds: ${sw.elapsedMilliseconds} ms');
+      debugPrint('closed stream');
+      expect(sw.elapsedMilliseconds, greaterThanOrEqualTo(1000));
+      expect(sw.elapsedMilliseconds, lessThan(1100));
+    }, timeout: const Timeout(Duration(seconds: 2)));
+
+    test('delayed(cancel)', () async {
+      unawaited(() async {
+        await Future<void>.delayed(const Duration(seconds: 1));
+        await context.close();
+      }());
+      try {
+        debugPrint('start delayed');
+        await context.delayed(const Duration(seconds: 10));
+        fail('always Nothing');
+      } on CancellationException catch (e, stackTrace) {
+        debugPrint('throws CancellationException');
+        debugPrint('$e, $stackTrace');
+      }
+    });
+
     test('error', () async {
       try {
         await context.suspend((context) async {

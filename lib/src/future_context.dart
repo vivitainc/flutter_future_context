@@ -128,15 +128,27 @@ class FutureContext {
       return;
     } else {
       // キャンセル最適化を行う
-      await isCanceledStream
-          .timeout(duration, onTimeout: (c) {
-            c.add(true);
-            c.close();
-            _notify();
-          })
-          .where((event) => event)
-          .first;
-      _resume();
+      final complete = Completer<int>();
+      final timer = Timer(duration, () {
+        if (!complete.isCompleted) {
+          _log('delayed.done: $duration');
+          complete.complete(0);
+        }
+      });
+      final subscribe =
+          isCanceledStream.where((event) => event).take(1).listen((event) {
+        if (!complete.isCompleted) {
+          _log('delayed.cancel: $duration');
+          complete.complete(1);
+        }
+      });
+      try {
+        await complete.future;
+        _resume();
+      } finally {
+        await subscribe.cancel();
+        timer.cancel();
+      }
     }
   }
 
