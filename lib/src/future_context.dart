@@ -47,11 +47,15 @@ class FutureContext {
       return null;
     } else {
       // StackTraceの先頭から3つ目のファイル・行を取得する
-      final trace =
-          StackTrace.current.toString().split('\n')[2 + debugCallStackLevel];
+      const popLevel = kIsWeb ? 3 : 2;
+      final trace = StackTrace.current
+          .toString()
+          .split('\n')[popLevel + debugCallStackLevel];
       var file = trace.replaceAll(r'\', '/').split('/').last;
       final split = file.split(':');
-      if (split.length >= 2) {
+      if (kIsWeb) {
+        file = split[0].replaceAll('.dart', '.dart:').replaceAll('::', ':');
+      } else if (split.length >= 2) {
         file = '${split[0]}:${split[1]}';
       }
       return file.replaceAll(')', '').replaceAll(' ', '');
