@@ -167,7 +167,18 @@ class FutureContext {
 
     final stackTrace = StackTrace.current;
     final complete = Completer<T2>();
-
+    final subscribe = isCanceledStream
+        .takeWhile((_) => !complete.isCompleted)
+        .where((event) => event)
+        .listen((event) {
+      if (!complete.isCompleted) {
+        complete.completeError(
+          CancellationException('${toString()} is canceled.'),
+          stackTrace,
+        );
+      }
+    });
+    final future = complete.future;
     unawaited(() async {
       try {
         final result = await block(this);
@@ -184,19 +195,8 @@ class FutureContext {
         _notify();
       }
     }());
-    final subscribe = isCanceledStream
-        .takeWhile((_) => !complete.isCompleted)
-        .where((event) => event)
-        .listen((event) {
-      if (!complete.isCompleted) {
-        complete.completeError(
-          CancellationException('${toString()} is canceled.'),
-          stackTrace,
-        );
-      }
-    });
     try {
-      final result = await complete.future;
+      final result = await future;
       _resume();
       return result;
     } finally {
