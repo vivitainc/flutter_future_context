@@ -42,22 +42,44 @@ class FutureContext {
   /// キャンセル識別用タグ
   final String? tag;
 
+  static String? _newDefaultTag(int debugCallStackLevel) {
+    if (kReleaseMode) {
+      return null;
+    } else {
+      // StackTraceの先頭から3つ目のファイル・行を取得する
+      final trace =
+          StackTrace.current.toString().split('\n')[2 + debugCallStackLevel];
+      var file = trace.replaceAll(r'\', '/').split('/').last;
+      final split = file.split(':');
+      if (split.length >= 2) {
+        file = '${split[0]}:${split[1]}';
+      }
+      return file.replaceAll(')', '').replaceAll(' ', '');
+    }
+  }
+
   /// 空のFutureContextを作成する.
   FutureContext({
-    this.tag,
-  }) : _group = const {};
+    String? tag,
+    int debugCallStackLevel = 0,
+  })  : tag = tag ?? _newDefaultTag(debugCallStackLevel),
+        _group = const {};
 
   /// 指定した親Contextを持つFutureContextを作成する.
   FutureContext.child(
     FutureContext parent, {
-    this.tag,
-  }) : _group = {parent};
+    String? tag,
+    int debugCallStackLevel = 0,
+  })  : tag = tag ?? _newDefaultTag(debugCallStackLevel),
+        _group = {parent};
 
   /// 指定した複数の親Contextを持つFutureContextを作成する.
   FutureContext.group(
     Iterable<FutureContext> group, {
-    this.tag,
-  }) : _group = group.toSet();
+    String? tag,
+    int debugCallStackLevel = 0,
+  })  : tag = tag ?? _newDefaultTag(debugCallStackLevel),
+        _group = group.toSet();
 
   /// 処理が継続中の場合trueを返却する.
   bool get isActive {
@@ -216,7 +238,10 @@ class FutureContext {
     Duration timeout,
     FutureSuspendBlock<T2> block,
   ) async {
-    final child = FutureContext.child(this);
+    final child = FutureContext.child(
+      this,
+      debugCallStackLevel: 1,
+    );
     try {
       return await child.suspend(block).timeout(timeout);
     } on TimeoutException catch (e) {
