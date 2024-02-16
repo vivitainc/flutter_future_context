@@ -1,8 +1,10 @@
-## 0.0.2+12
+## 0.0.2+13
 
 * Fix: FutureContext.delayed()内部でisCanceledStreamがリークする問題を修正
 * Fix: FutureContext.delayed()内部でタイムアウトが正常に発生しない場合がある問題を修正
 * Fix: FutureContext.suspend()内部でisCanceledStreamキャンセルできない場合がある問題を修正
+* Fix: WebビルドでFutureContext.suspend()が終了しない場合がある問題を修正
+* Add: Debugビルドで自動的にFutureContext.tagを設定する機能を追加
 
 ## 0.0.2+9
 
