@@ -236,11 +236,12 @@ class FutureContext {
   /// block()は [TimeoutException] が発生して終了する.
   Future<T2> withTimeout<T2>(
     Duration timeout,
-    FutureSuspendBlock<T2> block,
-  ) async {
+    FutureSuspendBlock<T2> block, {
+    int? debugCallStackLevel,
+  }) async {
     final child = FutureContext.child(
       this,
-      debugCallStackLevel: 1,
+      debugCallStackLevel: debugCallStackLevel ?? 1,
     );
     try {
       return await child.suspend(block).timeout(timeout);
